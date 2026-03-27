@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TruthLens Free - Fake News Detector</title>
+    <style>
+      body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background-color: #f0f4f8;
+        font-family: Arial, sans-serif;
+      }
+      .container {
+        text-align: center;
+        background-color: #fff;
+        padding: 30px;
+        border-radius: 15px;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        width: 95%;
+        max-width: 600px;
+      }
+      h1 {
+        color: #2c3e50;
+        margin-bottom: 20px;
+      }
+      input,
+      textarea,
+      button {
+        width: 90%;
+        padding: 12px;
+        margin: 10px 0;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+        font-size: 16px;
+      }
+      button {
+        background-color: #2c3e50;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      button:hover {
+        background-color: #34495e;
+      }
+      #result {
+        margin-top: 20px;
+        font-weight: bold;
+        font-size: 20px;
+        text-align: left;
+      }
+      #confidenceBar {
+        width: 90%;
+        height: 20px;
+        background: #ddd;
+        margin: 10px auto;
+        border-radius: 10px;
+      }
+      #barFill {
+        height: 100%;
+        width: 0%;
+        background: green;
+        border-radius: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>TruthLens 🔍</h1>
+      <textarea id="textInput" placeholder="Paste text news here..."></textarea>
+      <input type="file" id="imageInput" accept="image/*" />
+      <button onclick="analyzeNews()">Detect Fake / Real</button>
+      <div id="result"></div>
+      <div id="confidenceBar"><div id="barFill"></div></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+
+    <script>
+      // Keywords
+      const fakeKeywords = [
+        "shocking",
+        "click here",
+        "breaking news",
+        "miracle",
+        "secret",
+        "hoax",
+        "rumor",
+        "unverified",
+        "viral",
+        "conspiracy",
+        "scam",
+        "fake alert",
+        "exclusive",
+        "allegedly",
+        "you won't believe",
+        "unbelievable",
+        "sensational",
+        "must watch",
+        "leak",
+        "urgent",
+        "false claim",
+        "exposed",
+        "hidden truth",
+        "guaranteed",
+        "miracle cure",
+        "too good to be true",
+        "anonymous source",
+        "fake news",
+      ];
+      const realKeywords = [
+        "official",
+        "report",
+        "study",
+        "press release",
+        "journal",
+        "research",
+        "government",
+        "statement",
+        "data",
+        "analysis",
+        "survey",
+        "peer-reviewed",
+        "verified",
+        "evidence",
+        "publication",
+        "documented",
+        "confirmed",
+        "official report",
+        "policy",
+        "statistics",
+        "whitepaper",
+        "investigation",
+        "press conference",
+        "source confirmed",
+      ];
+
+      // Highlight keywords
+      function highlightKeywords(text, keywords, color) {
+        keywords.forEach((word) => {
+          const regex = new RegExp(\\b(${word})\\b, "gi");
+          text = text.replace(
+            regex,
+            <span style="color:${color}; font-weight:bold;">$1</span>,
+          );
+        });
+        return text;
+      }
+
+      // Improved classifier: always returns REAL or FAKE, confidence 80-99%
+      function simpleFakeNewsClassifier(text) {
+        let score = 0;
+        text = text.toLowerCase();
+
+        fakeKeywords.forEach((word) => {
+          if (text.includes(word)) score -= 1;
+        });
+        realKeywords.forEach((word) => {
+          if (text.includes(word)) score += 1;
+        });
+
+        let result, confidence;
+        if (score > 0) {
+          result = "REAL";
+          confidence = 80 + Math.min(19, score * 2); // 80-99%
+        } else if (score < 0) {
+          result = "FAKE";
+          confidence = 80 + Math.min(19, Math.abs(score) * 2); // 80-99%
+        } else {
+          // neutral text, default to REAL
+          result = "REAL";
+          confidence = 80; // minimum confidence
+        }
+        confidence = Math.min(confidence, 99);
+        return { result, confidence };
+      }
+      // Main function
+      async function analyzeNews() {
+        const textInput = document.getElementById("textInput").value.trim();
+        const imageFile = document.getElementById("imageInput").files[0];
+        const resultDiv = document.getElementById("result");
+        const barFill = document.getElementById("barFill");
+
+        if (!textInput && !imageFile) {
+          resultDiv.innerHTML = "⚠️ Please enter text or upload an image!";
+          barFill.style.width = "0%";
+          return;
+        }
+
+        resultDiv.innerHTML = "Analyzing... ⏳";
+        let content = textInput;
+
+        if (imageFile) {
+          try {
+            const {
+              data: { text: ocrText },
+            } = await Tesseract.recognize(imageFile, "eng", {
+              logger: (m) => console.log(m),
+            });
+            content += "\n" + ocrText;
+            resultDiv.innerHTML = <i>Extracted Text: ${ocrText.substring(0, 300)}...</i><br>;
+          } catch (err) {
+            console.error(err);
+            resultDiv.innerHTML = "❌ Error reading image text.";
+            barFill.style.width = "0%";
+            return;
+          }
+        }
+
+        const analysis = simpleFakeNewsClassifier(content);
+
+        // Highlight keywords
+        let highlighted = highlightKeywords(content, fakeKeywords, "red");
+        highlighted = highlightKeywords(highlighted, realKeywords, "green");
+
+        // Show result
+        resultDiv.innerHTML += <br><b>${analysis.result} (Confidence: ${analysis.confidence.toFixed(0)}%)</b><br>;
+        resultDiv.innerHTML += <br>Preview:<br>${highlighted.substring(0, 500)}...;
+        barFill.style.width = analysis.confidence + "%";
+        barFill.style.background = analysis.result === "REAL" ? "green" : "red";
+      }
+
+      // Auto-analyze
+      document
+        .getElementById("textInput")
+        .addEventListener("input", analyzeNews);
+      document
+        .getElementById("imageInput")
+        .addEventListener("change", analyzeNews);
+    </script>
+  </body>
+</html>
